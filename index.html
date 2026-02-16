@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Air Canvas Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+    * { box-sizing: border-box; }
+    body { 
+        margin: 0; 
+        overflow: hidden; 
+        background: #111; 
+        font-family: 'SF Pro Display', 'Segoe UI', sans-serif;
+        cursor: none;
+    }
+
+    .bar, .dropdown, .btn, .shape-btn, .emoji-btn, .file-btn, .bg-btn, .size-btn, .grid-option, input[type="range"], label, .upload-btn {
+        cursor: pointer !important;
+    }
+
+    #bgC { position: absolute; z-index: 5; pointer-events: none; }
+    #docBg { position: absolute; z-index: 6; width: 100%; height: 100%; display: none; pointer-events: none; background: #222; }
+    #video { position: absolute; width: 100%; height: 100%; object-fit: fill; transform: scaleX(-1); opacity: 0.9; z-index: 6; }
+    #gridC { position: absolute; z-index: 10; pointer-events: none; }
+    #drawC { position: absolute; z-index: 20; pointer-events: none; }
+    
+    #cursor {
+        position: absolute; width: 16px; height: 16px;
+        background: rgba(0,255,204,0.5); border: 2px solid #00ffcc;
+        border-radius: 50%; transform: translate(-50%, -50%);
+        pointer-events: none; z-index: 250; transition: width 0.15s, height 0.15s, border-color 0.2s, background 0.2s;
+    }
+    
+    body.over-ui #cursor {
+        width: 20px; height: 20px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 2px solid rgba(0, 0, 0, 0.3);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    #previewFloat {
+        position: absolute; pointer-events: none; z-index: 245;
+        transform: translate(-50%, -50%);
+        opacity: 0.8; font-size: 40px; display: none;
+    }
+    #previewFloat.emoji-preview { animation: float 1.5s ease-in-out infinite; }
+    
+    @keyframes float {
+        0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+        50% { transform: translate(-50%, -50%) translateY(-8px); }
+    }
+
+    .bar {
+        position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 6px; z-index: 100;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 12px 20px; border-radius: 24px;
+        backdrop-filter: blur(40px) saturate(200%);
+        border: 1.5px solid rgba(255, 255, 255, 0.25);
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+        flex-wrap: wrap; justify-content: center; max-width: 95vw;
+    }
+    
+    .btn {
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.95);
+        padding: 10px 16px; border-radius: 14px; font-size: 13px;
+        cursor: pointer; user-select: none; min-width: 50px; text-align: center;
+        transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        font-weight: 500; border: 1px solid rgba(255, 255, 255, 0.1);
+        white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .btn.hovered {
+        transform: scale(1.08) translateY(-2px);
+        background: rgba(255, 255, 255, 0.18);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), 0 0 20px var(--active-color, #00ffcc);
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+    
+    .btn:active { transform: scale(0.98); }
+    
+    .btn.act { 
+        background: var(--active-color, #00ffcc); color: #000; font-weight: 600;
+        box-shadow: 0 0 25px var(--active-color, #00ffcc), 0 2px 4px rgba(255,255,255,0.4) inset;
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+    
+    .btn.act.hovered {
+        transform: scale(1.08) translateY(-2px);
+        box-shadow: 0 0 30px var(--active-color, #00ffcc), 0 4px 20px rgba(0,0,0,0.35);
+    }
+    
+    .divider { width: 1px; background: linear-gradient(180deg, transparent, rgba(255,255,255,0.25), transparent); margin: 4px 6px; }
+    
+    .page-info {
+        position: absolute; bottom: 20px; left: 20px; color: rgba(255,255,255,0.95);
+        background: rgba(255, 255, 255, 0.08);
+        padding: 12px 22px; border-radius: 18px; z-index: 100;
+        font-size: 14px; font-weight: 500;
+        backdrop-filter: blur(30px) saturate(180%);
+        border: 1.5px solid rgba(255, 255, 255, 0.2);
+        display: flex; align-items: center; gap: 8px;
+    }
+    .page-info .pdf-indicator {
+        color: #ff9900; font-size: 12px; margin-left: 8px;
+        padding: 2px 8px; background: rgba(255,153,0,0.2); border-radius: 8px;
+    }
+
+    .dropdown {
+        position: absolute; top: 90px; left: 50%; transform: translateX(-50%);
+        background: rgba(20, 20, 25, 0.75);
+        padding: 18px; border-radius: 20px;
+        z-index: 150; display: none; 
+        backdrop-filter: blur(40px) saturate(200%);
+        border: 1.5px solid rgba(255, 255, 255, 0.15);
+        box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+    }
+    .dropdown.show { display: block; animation: fadeIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateX(-50%) translateY(-15px) scale(0.92); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    }
+
+    .dropdown-title {
+        color: rgba(255,255,255,0.6); font-size: 11px; text-transform: uppercase;
+        letter-spacing: 1.8px; margin-bottom: 14px; text-align: center; font-weight: 700;
+    }
+
+    .shape-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .shape-btn {
+        width: 60px; height: 60px; background: rgba(255, 255, 255, 0.05);
+        border-radius: 16px; display: flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94); border: 2px solid transparent;
+    }
+    .shape-btn.hovered { background: rgba(255, 255, 255, 0.14); transform: scale(1.1); box-shadow: 0 0 15px var(--active-color, #00ffcc); }
+    .shape-btn.selected { border-color: var(--active-color, #00ffcc); background: rgba(0, 255, 204, 0.15); }
+    .shape-btn svg { width: 30px; height: 30px; stroke: rgba(255,255,255,0.85); fill: none; stroke-width: 2; }
+
+    .emoji-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-height: 220px; overflow-y: auto; }
+    .emoji-grid::-webkit-scrollbar { width: 6px; }
+    .emoji-grid::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 3px; }
+    .emoji-grid::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 3px; }
+    
+    .emoji-btn {
+        width: 42px; height: 42px; font-size: 24px;
+        background: rgba(255, 255, 255, 0.04); border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .emoji-btn.hovered { background: rgba(255, 255, 255, 0.18); transform: scale(1.2); }
+
+    .size-presets { display: flex; gap: 8px; margin-bottom: 16px; justify-content: center; }
+    .size-btn {
+        width: 50px; height: 50px; background: rgba(255, 255, 255, 0.05);
+        border-radius: 14px; display: flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: all 0.25s; border: 2px solid transparent;
+    }
+    .size-btn .size-preview { border-radius: 50%; background: var(--active-color, #00ffcc); }
+    .size-btn.hovered { background: rgba(255, 255, 255, 0.14); transform: scale(1.1); }
+    .size-btn.selected { border-color: var(--active-color, #00ffcc); background: rgba(0, 255, 204, 0.15); }
+    
+    .size-slider-section { padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }
+    .size-slider-label { color: rgba(255,255,255,0.6); font-size: 11px; margin-bottom: 10px; display: flex; justify-content: space-between; text-transform: uppercase; }
+    .size-slider, .eraser-slider {
+        width: 100%; -webkit-appearance: none; height: 8px; border-radius: 4px;
+        background: rgba(255,255,255,0.15); outline: none;
+    }
+    .size-slider::-webkit-slider-thumb, .eraser-slider::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%; cursor: grab;
+    }
+    .size-slider::-webkit-slider-thumb { background: var(--active-color, #00ffcc); box-shadow: 0 0 12px var(--active-color, #00ffcc); }
+    .eraser-slider::-webkit-slider-thumb { background: #ff3366; box-shadow: 0 0 12px rgba(255,51,102,0.5); }
+
+    .grid-options { display: flex; flex-direction: column; gap: 10px; min-width: 220px; }
+    .grid-option {
+        padding: 12px 16px; background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px; color: rgba(255,255,255,0.9); cursor: pointer;
+        transition: all 0.25s; display: flex; align-items: center; gap: 12px; border: 1.5px solid transparent;
+    }
+    .grid-option.hovered { background: rgba(255, 255, 255, 0.12); transform: translateX(4px); }
+    .grid-option.selected { border-color: var(--active-color, #00ffcc); background: rgba(0, 255, 204, 0.15); }
+    .grid-option-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+
+    .bg-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .bg-btn {
+        width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+        transition: all 0.25s; border: 3px solid transparent;
+    }
+    .bg-btn.hovered { transform: scale(1.2); box-shadow: 0 0 15px var(--active-color, #00ffcc); }
+    .bg-btn.selected { border-color: white; }
+    .bg-btn.cam { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+
+    .eraser-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.1); }
+    .eraser-label { color: rgba(255,255,255,0.6); font-size: 11px; margin-bottom: 10px; display: flex; justify-content: space-between; text-transform: uppercase; }
+
+    .upload-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.1); }
+    .upload-btn {
+        width: 100%; padding: 12px; background: rgba(255, 255, 255, 0.08);
+        border-radius: 12px; color: rgba(255,255,255,0.9); cursor: pointer;
+        transition: all 0.25s; display: flex; align-items: center; justify-content: center; gap: 10px;
+        border: 1.5px dashed rgba(255,255,255,0.3); margin-top: 8px;
+    }
+    .upload-btn.hovered { background: rgba(255, 255, 255, 0.15); border-color: var(--active-color, #00ffcc); transform: scale(1.02); }
+    .upload-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; }
+
+    .file-grid { display: flex; flex-direction: column; gap: 8px; min-width: 220px; }
+    .file-btn {
+        padding: 13px 20px; background: rgba(255, 255, 255, 0.05);
+        border-radius: 14px; color: rgba(255,255,255,0.95); cursor: pointer;
+        transition: all 0.25s; display: flex; align-items: center; gap: 14px; border: 1px solid rgba(255,255,255,0.08);
+    }
+    .file-btn.hovered { background: rgba(255, 255, 255, 0.14); transform: translateX(4px); }
+    .file-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+
+    #shapePreview { position: absolute; pointer-events: none; z-index: 25; border: 2px dashed rgba(255, 255, 255, 0.6); display: none; }
+
+    .toast {
+        position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(10px);
+        background: rgba(20, 20, 25, 0.85); color: white; padding: 14px 32px;
+        border-radius: 32px; z-index: 200; opacity: 0;
+        transition: all 0.3s; pointer-events: none;
+        backdrop-filter: blur(20px); border: 1.5px solid rgba(255,255,255,0.15);
+        font-size: 14px; font-weight: 500;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    #fileInput, #docInput { display: none; }
+</style>
+</head>
+<body>
+
+    <canvas id="bgC"></canvas>
+    <canvas id="docBg"></canvas>
+    <img id="video" src="/video_feed">
+    <canvas id="gridC"></canvas>
+    <canvas id="drawC"></canvas>
+    <div id="cursor"></div>
+    <div id="previewFloat"></div>
+    <div id="shapePreview"></div>
+    <div id="toast" class="toast"></div>
+    <input type="file" id="fileInput" accept=".json">
+    <input type="file" id="docInput" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp">
+
+    <div class="bar" id="mainBar">
+        <div class="btn" id="bPrev" onclick="handlePrevPage()">◀</div>
+        <div class="btn" id="bNext" onclick="handleNextPage()">▶</div>
+        <div class="divider"></div>
+        <div class="btn" id="bUndo" onclick="undo()">↶ Undo</div>
+        <div class="divider"></div>
+        <div class="btn" id="bBg" onclick="toggleDropdown('bgPanel')">🎨 BG</div>
+        <div class="btn" id="bGrid" onclick="toggleDropdown('gridPanel')">⊞ Grid</div>
+        <div class="btn" id="bShape" onclick="toggleDropdown('shapePanel')">Shape</div>
+        <div class="btn" id="bEmoji" onclick="toggleDropdown('emojiPanel')">😀</div>
+        <div class="divider"></div>
+        <div class="btn" id="bClr" onclick="clearPage()">Clear</div>
+        <div class="btn act" id="bCol" onclick="nextColor()">Color</div>
+        <div class="btn" id="bSiz" onclick="toggleDropdown('sizePanel')">Size</div>
+        <div class="divider"></div>
+        <div class="btn" id="bFile" onclick="toggleDropdown('filePanel')">💾</div>
+    </div>
+
+    <div id="bgPanel" class="dropdown">
+        <div class="dropdown-title">Background</div>
+        <div class="bg-grid" id="bgGrid"></div>
+        <div class="upload-section">
+            <div class="dropdown-title" style="margin-bottom:8px;">Upload PDF/Image</div>
+            <div class="upload-btn" id="uploadBtn" onclick="triggerUpload()">
+                <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                Upload File
+            </div>
+            <div class="upload-btn" id="clearDocBtn" onclick="clearDocument()" style="display:none; border-style:solid; border-color:rgba(255,100,100,0.5);">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                Remove Document
+            </div>
+        </div>
+        <div class="eraser-section">
+            <div class="eraser-label">
+                <span>Eraser Size</span>
+                <span id="eraserValue">30px</span>
+            </div>
+            <input type="range" class="eraser-slider" id="eraserSlider" min="10" max="100" value="30">
+        </div>
+    </div>
+
+    <div id="gridPanel" class="dropdown">
+        <div class="dropdown-title">Grid Settings</div>
+        <div class="grid-options">
+            <div class="grid-option selected" onclick="selectGridOption('none')" data-grid="none">
+                <div class="grid-option-icon">⊗</div><div>No Grid</div>
+            </div>
+            <div class="grid-option" onclick="selectGridOption('grid-30')" data-grid="grid-30">
+                <div class="grid-option-icon">⊞</div><div>Grid - Small (30px)</div>
+            </div>
+            <div class="grid-option" onclick="selectGridOption('grid-60')" data-grid="grid-60">
+                <div class="grid-option-icon">⊞</div><div>Grid - Medium (60px)</div>
+            </div>
+            <div class="grid-option" onclick="selectGridOption('grid-100')" data-grid="grid-100">
+                <div class="grid-option-icon">⊞</div><div>Grid - Large (100px)</div>
+            </div>
+            <div class="grid-option" onclick="selectGridOption('hlines-30')" data-grid="hlines-30">
+                <div class="grid-option-icon">☰</div><div>Horizontal Lines (30px)</div>
+            </div>
+            <div class="grid-option" onclick="selectGridOption('hlines-60')" data-grid="hlines-60">
+                <div class="grid-option-icon">☰</div><div>Horizontal Lines (60px)</div>
+            </div>
+            <div class="grid-option" onclick="selectGridOption('vlines-30')" data-grid="vlines-30">
+                <div class="grid-option-icon">|||</div><div>Vertical Lines (30px)</div>
+            </div>
+            <div class="grid-option" onclick="selectGridOption('vlines-60')" data-grid="vlines-60">
+                <div class="grid-option-icon">|||</div><div>Vertical Lines (60px)</div>
+            </div>
+            <div class="grid-option" onclick="selectGridOption('dots-60')" data-grid="dots-60">
+                <div class="grid-option-icon">⋮⋮</div><div>Dots (60px)</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="sizePanel" class="dropdown">
+        <div class="dropdown-title">Pen Size</div>
+        <div class="size-presets">
+            <div class="size-btn" onclick="selectSize(0)" data-size="0"><div class="size-preview" style="width:4px;height:4px;"></div></div>
+            <div class="size-btn selected" onclick="selectSize(1)" data-size="1"><div class="size-preview" style="width:8px;height:8px;"></div></div>
+            <div class="size-btn" onclick="selectSize(2)" data-size="2"><div class="size-preview" style="width:14px;height:14px;"></div></div>
+            <div class="size-btn" onclick="selectSize(3)" data-size="3"><div class="size-preview" style="width:22px;height:22px;"></div></div>
+            <div class="size-btn" onclick="selectSize(4)" data-size="4"><div class="size-preview" style="width:32px;height:32px;"></div></div>
+        </div>
+        <div class="size-slider-section">
+            <div class="size-slider-label"><span>Custom Size</span><span id="sizeValue">5px</span></div>
+            <input type="range" class="size-slider" id="sizeSlider" min="1" max="50" value="5">
+        </div>
+    </div>
+
+    <div id="shapePanel" class="dropdown">
+        <div class="dropdown-title">Hold pinch to draw, release to finalize</div>
+        <div class="shape-grid">
+            <div class="shape-btn selected" onclick="selectShape('draw')" data-shape="draw"><svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"/></svg></div>
+            <div class="shape-btn" onclick="selectShape('line')" data-shape="line"><svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"/></svg></div>
+            <div class="shape-btn" onclick="selectShape('rect')" data-shape="rect"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></div>
+            <div class="shape-btn" onclick="selectShape('circle')" data-shape="circle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg></div>
+            <div class="shape-btn" onclick="selectShape('triangle')" data-shape="triangle"><svg viewBox="0 0 24 24"><polygon points="12,3 22,21 2,21"/></svg></div>
+            <div class="shape-btn" onclick="selectShape('arrow')" data-shape="arrow"><svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12,5 19,12 12,19"/></svg></div>
+        </div>
+    </div>
+
+    <div id="emojiPanel" class="dropdown">
+        <div class="dropdown-title">Pinch to place emoji</div>
+        <div class="emoji-grid" id="emojiGrid"></div>
+    </div>
+
+    <div id="filePanel" class="dropdown">
+        <div class="dropdown-title">Save & Load</div>
+        <div class="file-grid">
+            <div class="file-btn" onclick="saveProject()"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>Save Project</div>
+            <div class="file-btn" onclick="loadProject()"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>Load Project</div>
+            <div class="file-btn" onclick="exportImage()"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>Export Drawing</div>
+            <div class="file-btn" onclick="exportWithBackground()"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15l4-4 4 4 6-6 4 4"/></svg>Export with BG</div>
+            <div class="file-btn" onclick="exportAllPages()"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>Export All Pages</div>
+        </div>
+    </div>
+
+    <div class="page-info">
+        <span>Page: <span id="pgNum">1</span></span>
+        <span id="pdfIndicator" class="pdf-indicator" style="display:none;">PDF: <span id="pdfPageNum">1</span>/<span id="pdfTotalNum">1</span></span>
+    </div>
+
+<script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    
+    const socket = io();
+    const cBg = document.getElementById("bgC");
+    const cDraw = document.getElementById("drawC");
+    const cGrid = document.getElementById("gridC");
+    const docBg = document.getElementById("docBg");
+    const video = document.getElementById("video");
+    const ctx = cDraw.getContext("2d");
+    const btx = cBg.getContext("2d");
+    const gtx = cGrid.getContext("2d");
+    const docCtx = docBg.getContext("2d");
+    const cursor = document.getElementById("cursor");
+    const previewFloat = document.getElementById("previewFloat");
+    const shapePreview = document.getElementById("shapePreview");
+    const fileInput = document.getElementById("fileInput");
+    const docInput = document.getElementById("docInput");
+    const eraserSlider = document.getElementById("eraserSlider");
+    const sizeSlider = document.getElementById("sizeSlider");
+
+    const COLORS = ["#00ffcc", "#ff0055", "#ffff00", "#ffffff", "#00aaff", "#ff9900", "#aa00ff", "#00ff88"];
+    const SIZES = [2, 5, 10, 20, 35];
+    const BG_COLORS = ["camera", "#111111", "#1a1a2e", "#16213e", "#0f3460", "#2d2d2d", "#3d3d3d", "#1e3a5f", "#2c3e50", "#1a1a1a", "#252525", "#2f4f4f", "#191970"];
+    const EMOJIS = ["😀", "😂", "🥰", "😎", "🤔", "😱", "❤️", "⭐", "🔥", "✨", "💯", "👍", "🎨", "✏️", "📌", "💡", "🎯", "🏆", "🌈", "☀️", "🌙", "⚡", "💎", "🎪", "🚀", "🎮", "🎵", "📷", "💻", "📱", "✅", "❌", "⚠️", "❓", "💬", "👀"];
+
+    let state = {
+        colIdx: 0, sizIdx: 1, currentGrid: 'none', pageIdx: 0, pages: [], undoStack: [],
+        currentShape: 'draw', selectedEmoji: null, bgColor: 'camera', eraserSize: 30,
+        document: null, pdfDoc: null, pdfPage: 1, pdfTotal: 1
+    };
+
+    let shapeStartPoint = null, isDrawingShape = false, lastHoveredEl = null, isOverUI = false, placementCooldown = false;
+    let tx = 0, ty = 0, cx = 0, cy = 0, isPinching = false, isPalm = false;
+    let points = [], lastPinchTime = 0, wasPinching = false, wasPalm = false;
+    let activeSlider = null, isInteractingWithSlider = false;
+    const PINCH_DEBOUNCE = 200;
+
+    // Trigger upload (works with pinch click)
+    function triggerUpload() {
+        docInput.click();
+        closeAllDropdowns();
+    }
+
+    eraserSlider.addEventListener('input', function() {
+        state.eraserSize = parseInt(this.value);
+        document.getElementById("eraserValue").innerText = this.value + "px";
+    });
+    
+    sizeSlider.addEventListener('input', function() {
+        const val = parseInt(this.value);
+        SIZES[state.sizIdx] = val;
+        document.getElementById("sizeValue").innerText = val + "px";
+        updatePen();
+    });
+
+    // Document upload handler
+    docInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const isPDF = file.type === 'application/pdf';
+        
+        if (isPDF) {
+            const arrayBuffer = await file.arrayBuffer();
+            state.pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+            state.pdfTotal = state.pdfDoc.numPages;
+            state.pdfPage = 1;
+            await renderPdfPage(state.pdfPage);
+            updatePdfIndicator();
+        } else {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    state.document = img;
+                    state.pdfDoc = null;
+                    hidePdfIndicator();
+                    renderDocumentBackground();
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        document.getElementById('clearDocBtn').style.display = 'flex';
+        state.bgColor = 'document';
+        video.style.display = 'none';
+        docBg.style.display = 'block';
+        document.querySelectorAll(".bg-btn").forEach(b => b.classList.remove("selected"));
+        closeAllDropdowns();
+        showToast(isPDF ? 'PDF loaded!' : 'Image loaded!');
+        docInput.value = "";
+    });
+
+    function updatePdfIndicator() {
+        document.getElementById('pdfIndicator').style.display = 'inline';
+        document.getElementById('pdfPageNum').innerText = state.pdfPage;
+        document.getElementById('pdfTotalNum').innerText = state.pdfTotal;
+    }
+
+    function hidePdfIndicator() {
+        document.getElementById('pdfIndicator').style.display = 'none';
+    }
+
+    async function renderPdfPage(pageNum) {
+        const page = await state.pdfDoc.getPage(pageNum);
+        const scale = Math.min(window.innerWidth / page.getViewport({scale: 1}).width, 
+                               window.innerHeight / page.getViewport({scale: 1}).height);
+        const viewport = page.getViewport({ scale: scale * 1.5 });
+        
+        docBg.width = window.innerWidth;
+        docBg.height = window.innerHeight;
+        
+        docCtx.fillStyle = '#ffffff';
+        docCtx.fillRect(0, 0, docBg.width, docBg.height);
+        
+        const offsetX = (docBg.width - viewport.width) / 2;
+        const offsetY = (docBg.height - viewport.height) / 2;
+        docCtx.save();
+        docCtx.translate(offsetX, offsetY);
+        
+        await page.render({ canvasContext: docCtx, viewport: viewport }).promise;
+        docCtx.restore();
+    }
+
+    function renderDocumentBackground() {
+        if (!state.document) return;
+        docBg.width = window.innerWidth;
+        docBg.height = window.innerHeight;
+        
+        const img = state.document;
+        const scale = Math.min(docBg.width / img.width, docBg.height / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        const x = (docBg.width - w) / 2;
+        const y = (docBg.height - h) / 2;
+        
+        docCtx.fillStyle = '#222';
+        docCtx.fillRect(0, 0, docBg.width, docBg.height);
+        docCtx.drawImage(img, x, y, w, h);
+    }
+
+    // Unified page navigation - handles both canvas pages and PDF pages
+    function handlePrevPage() {
+        if (state.pdfDoc && state.pdfPage > 1) {
+            changePdfPage(-1);
+        } else {
+            changePage(-1);
+        }
+    }
+
+    function handleNextPage() {
+        if (state.pdfDoc && state.pdfPage < state.pdfTotal) {
+            changePdfPage(1);
+        } else {
+            changePage(1);
+        }
+    }
+
+    async function changePdfPage(dir) {
+        if (!state.pdfDoc) return;
+        const newPage = state.pdfPage + dir;
+        if (newPage >= 1 && newPage <= state.pdfTotal) {
+            state.pdfPage = newPage;
+            await renderPdfPage(state.pdfPage);
+            updatePdfIndicator();
+            showToast(`PDF Page ${state.pdfPage}/${state.pdfTotal}`);
+        }
+    }
+
+    function clearDocument() {
+        state.document = null;
+        state.pdfDoc = null;
+        state.bgColor = 'camera';
+        docBg.style.display = 'none';
+        video.style.display = 'block';
+        hidePdfIndicator();
+        document.getElementById('clearDocBtn').style.display = 'none';
+        document.querySelectorAll(".bg-btn")[0].classList.add("selected");
+        showToast('Document removed');
+    }
+
+    function updateActiveColor() {
+        document.documentElement.style.setProperty('--active-color', COLORS[state.colIdx]);
+    }
+
+    function initBgGrid() {
+        const grid = document.getElementById("bgGrid");
+        BG_COLORS.forEach((color, idx) => {
+            const btn = document.createElement("div");
+            btn.className = "bg-btn" + (idx === 0 ? " selected cam" : "");
+            if (color === "camera") btn.innerHTML = "📹";
+            else btn.style.background = color;
+            btn.onclick = () => selectBgColor(color, btn);
+            grid.appendChild(btn);
+        });
+    }
+
+    function initEmojiGrid() {
+        const grid = document.getElementById("emojiGrid");
+        EMOJIS.forEach(emoji => {
+            const btn = document.createElement("div");
+            btn.className = "emoji-btn";
+            btn.innerText = emoji;
+            btn.onclick = () => selectEmoji(emoji);
+            grid.appendChild(btn);
+        });
+    }
+    
+    initBgGrid();
+    initEmojiGrid();
+    updateActiveColor();
+
+    function resize() {
+        savePage();
+        cDraw.width = cGrid.width = cBg.width = window.innerWidth;
+        cDraw.height = cGrid.height = cBg.height = window.innerHeight;
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+        updatePen();
+        drawBackground();
+        drawGrid();
+        restorePage();
+        if (state.bgColor === 'document') {
+            if (state.pdfDoc) renderPdfPage(state.pdfPage);
+            else if (state.document) renderDocumentBackground();
+        }
+    }
+    window.addEventListener("resize", resize);
+    
+    function updatePen() {
+        ctx.strokeStyle = COLORS[state.colIdx];
+        ctx.lineWidth = SIZES[state.sizIdx];
+        ctx.shadowBlur = SIZES[state.sizIdx] * 1.5;
+        ctx.shadowColor = COLORS[state.colIdx];
+        ctx.fillStyle = COLORS[state.colIdx];
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        updateActiveColor();
+        updateFloatingPreview();
+        document.getElementById("bSiz").innerText = `Size: ${SIZES[state.sizIdx]}`;
+    }
+
+    function updateFloatingPreview() {
+        if (state.selectedEmoji) {
+            previewFloat.innerHTML = state.selectedEmoji;
+            previewFloat.className = 'emoji-preview';
+            previewFloat.style.display = 'block';
+            previewFloat.style.fontSize = (SIZES[state.sizIdx] * 3) + 'px';
+        } else {
+            previewFloat.style.display = 'none';
+            previewFloat.className = '';
+        }
+    }
+
+    function selectBgColor(color, btn) {
+        state.bgColor = color;
+        document.querySelectorAll(".bg-btn").forEach(b => b.classList.remove("selected"));
+        btn.classList.add("selected");
+        drawBackground();
+        closeAllDropdowns();
+        showToast(color === 'camera' ? 'Camera background' : 'Solid background');
+    }
+
+    function drawBackground() {
+        if (state.bgColor === 'document') {
+            video.style.display = 'none';
+            docBg.style.display = 'block';
+            btx.clearRect(0, 0, cBg.width, cBg.height);
+        } else if (state.bgColor === 'camera') {
+            video.style.display = 'block';
+            docBg.style.display = 'none';
+            btx.clearRect(0, 0, cBg.width, cBg.height);
+        } else {
+            video.style.display = 'none';
+            docBg.style.display = 'none';
+            btx.fillStyle = state.bgColor;
+            btx.fillRect(0, 0, cBg.width, cBg.height);
+        }
+    }
+
+    function undo() {
+        if (state.undoStack.length > 0) {
+            const prevState = state.undoStack.pop();
+            ctx.clearRect(0, 0, cDraw.width, cDraw.height);
+            if (prevState) {
+                let img = new Image();
+                img.onload = () => { ctx.drawImage(img, 0, 0); updatePen(); };
+                img.src = prevState;
+            }
+            showToast("Undo");
+        } else { showToast("Nothing to undo"); }
+    }
+
+    function saveToUndoStack() {
+        state.undoStack.push(cDraw.toDataURL());
+        if (state.undoStack.length > 20) state.undoStack.shift();
+    }
+
+    function toggleDropdown(panelId) {
+        const panel = document.getElementById(panelId);
+        const wasOpen = panel.classList.contains("show");
+        closeAllDropdowns();
+        if (!wasOpen) panel.classList.add("show");
+    }
+
+    function closeAllDropdowns() {
+        document.querySelectorAll(".dropdown").forEach(d => d.classList.remove("show"));
+    }
+
+    document.addEventListener("click", (e) => {
+        if (!e.target.closest(".dropdown") && !e.target.closest(".btn")) closeAllDropdowns();
+    });
+
+    function selectGridOption(gridType) {
+        state.currentGrid = gridType;
+        document.querySelectorAll(".grid-option").forEach(opt => {
+            opt.classList.toggle("selected", opt.dataset.grid === gridType);
+        });
+        const btn = document.getElementById("bGrid");
+        if (gridType === 'none') { btn.innerText = "⊞ Grid"; btn.classList.remove("act"); }
+        else { btn.classList.add("act"); btn.innerText = "⊞ On"; }
+        drawGrid();
+        closeAllDropdowns();
+        showToast(gridType === 'none' ? 'Grid off' : 'Grid: ' + gridType);
+    }
+
+    function drawGrid() {
+        gtx.clearRect(0, 0, cGrid.width, cGrid.height);
+        if (state.currentGrid === 'none') return;
+        const parts = state.currentGrid.split('-');
+        const type = parts[0];
+        const size = parseInt(parts[1]);
+        gtx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+        gtx.fillStyle = "rgba(255, 255, 255, 0.35)";
+        gtx.lineWidth = 1;
+
+        if (type === 'grid') {
+            gtx.beginPath();
+            for (let x = size; x < cGrid.width; x += size) { gtx.moveTo(x, 0); gtx.lineTo(x, cGrid.height); }
+            for (let y = size; y < cGrid.height; y += size) { gtx.moveTo(0, y); gtx.lineTo(cGrid.width, y); }
+            gtx.stroke();
+            gtx.strokeStyle = "rgba(255, 255, 255, 0.35)"; gtx.lineWidth = 2;
+            gtx.beginPath();
+            gtx.moveTo(cGrid.width / 2, 0); gtx.lineTo(cGrid.width / 2, cGrid.height);
+            gtx.moveTo(0, cGrid.height / 2); gtx.lineTo(cGrid.width, cGrid.height / 2);
+            gtx.stroke();
+        } else if (type === 'hlines') {
+            gtx.beginPath();
+            for (let y = size; y < cGrid.height; y += size) { gtx.moveTo(0, y); gtx.lineTo(cGrid.width, y); }
+            gtx.stroke();
+        } else if (type === 'vlines') {
+            gtx.beginPath();
+            for (let x = size; x < cGrid.width; x += size) { gtx.moveTo(x, 0); gtx.lineTo(x, cGrid.height); }
+            gtx.stroke();
+        } else if (type === 'dots') {
+            for (let x = size; x < cGrid.width; x += size) {
+                for (let y = size; y < cGrid.height; y += size) {
+                    gtx.beginPath(); gtx.arc(x, y, 2, 0, Math.PI * 2); gtx.fill();
+                }
+            }
+        }
+    }
+
+    function selectSize(idx) {
+        state.sizIdx = idx;
+        document.querySelectorAll(".size-btn").forEach(btn => {
+            btn.classList.toggle("selected", parseInt(btn.dataset.size) === idx);
+        });
+        sizeSlider.value = SIZES[idx];
+        document.getElementById("sizeValue").innerText = SIZES[idx] + "px";
+        updatePen();
+        closeAllDropdowns();
+    }
+
+    function selectShape(shape) {
+        state.currentShape = shape;
+        state.selectedEmoji = null;
+        document.querySelectorAll(".shape-btn").forEach(btn => {
+            btn.classList.toggle("selected", btn.dataset.shape === shape);
+        });
+        const btn = document.getElementById("bShape");
+        btn.classList.toggle("act", shape !== 'draw');
+        btn.innerText = shape === 'draw' ? 'Shape' : shape.charAt(0).toUpperCase() + shape.slice(1);
+        document.getElementById("bEmoji").innerText = "😀";
+        document.getElementById("bEmoji").classList.remove("act");
+        closeAllDropdowns();
+        updateFloatingPreview();
+        if (shape !== 'draw') showToast(`${shape} - hold pinch & drag`);
+    }
+
+    function selectEmoji(emoji) {
+        state.selectedEmoji = emoji;
+        state.currentShape = 'emoji';
+        document.getElementById("bEmoji").innerText = emoji;
+        document.getElementById("bEmoji").classList.add("act");
+        document.querySelectorAll(".shape-btn").forEach(btn => {
+            btn.classList.toggle("selected", btn.dataset.shape === 'draw');
+        });
+        document.getElementById("bShape").classList.remove("act");
+        document.getElementById("bShape").innerText = "Shape";
+        closeAllDropdowns();
+        updateFloatingPreview();
+        showToast(`${emoji} - pinch to place`);
+    }
+
+    function nextColor() {
+        state.colIdx = (state.colIdx + 1) % COLORS.length;
+        const btn = document.getElementById("bCol");
+        btn.style.color = "black";
+        btn.style.backgroundColor = COLORS[state.colIdx];
+        btn.style.boxShadow = `0 0 25px ${COLORS[state.colIdx]}`;
+        updatePen();
+    }
+
+    function clearPage() { saveToUndoStack(); ctx.clearRect(0, 0, cDraw.width, cDraw.height); showToast("Page cleared"); }
+    function savePage() { state.pages[state.pageIdx] = cDraw.toDataURL(); }
+
+    function restorePage() {
+        ctx.clearRect(0, 0, cDraw.width, cDraw.height);
+        if (state.pages[state.pageIdx]) {
+            let img = new Image();
+            img.onload = () => { ctx.drawImage(img, 0, 0); updatePen(); };
+            img.src = state.pages[state.pageIdx];
+        }
+        state.undoStack = [];
+    }
+
+    function changePage(dir) {
+        savePage();
+        const newIdx = state.pageIdx + dir;
+        if (newIdx >= 0) {
+            state.pageIdx = newIdx;
+            document.getElementById("pgNum").innerText = state.pageIdx + 1;
+            restorePage();
+            showToast(`Page ${state.pageIdx + 1}`);
+        }
+    }
+
+    function saveProject() {
+        savePage();
+        const project = { version: 4, pages: state.pages, settings: { colIdx: state.colIdx, sizIdx: state.sizIdx, currentGrid: state.currentGrid, bgColor: state.bgColor, eraserSize: state.eraserSize } };
+        const blob = new Blob([JSON.stringify(project)], { type: "application/json" });
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+        a.download = `air-canvas-${Date.now()}.json`; a.click();
+        closeAllDropdowns(); showToast("Project saved!");
+    }
+
+    function loadProject() { fileInput.click(); closeAllDropdowns(); }
+
+    fileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const project = JSON.parse(event.target.result);
+                state.pages = project.pages || [];
+                if (project.settings) {
+                    state.colIdx = project.settings.colIdx || 0;
+                    state.sizIdx = project.settings.sizIdx || 1;
+                    state.currentGrid = project.settings.currentGrid || 'none';
+                    state.bgColor = project.settings.bgColor || 'camera';
+                    state.eraserSize = project.settings.eraserSize || 30;
+                }
+                state.pageIdx = 0;
+                document.getElementById("pgNum").innerText = "1";
+                eraserSlider.value = state.eraserSize;
+                document.getElementById("eraserValue").innerText = state.eraserSize + "px";
+                restorePage(); drawBackground(); drawGrid(); updatePen();
+                const colBtn = document.getElementById("bCol");
+                colBtn.style.backgroundColor = COLORS[state.colIdx];
+                colBtn.style.boxShadow = `0 0 25px ${COLORS[state.colIdx]}`;
+                selectGridOption(state.currentGrid);
+                showToast("Project loaded!");
+            } catch (err) { showToast("Error loading file"); }
+        };
+        reader.readAsText(file);
+        fileInput.value = "";
+    });
+
+    function exportImage() {
+        savePage();
+        const a = document.createElement("a");
+        a.href = cDraw.toDataURL("image/png");
+        a.download = `air-canvas-drawing-${state.pageIdx + 1}.png`;
+        a.click();
+        closeAllDropdowns(); showToast("Drawing exported!");
+    }
+
+    function exportWithBackground() {
+        savePage();
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = cDraw.width; exportCanvas.height = cDraw.height;
+        const exportCtx = exportCanvas.getContext('2d');
+        
+        if (state.bgColor === 'document' && (state.document || state.pdfDoc)) {
+            exportCtx.drawImage(docBg, 0, 0);
+        } else if (state.bgColor !== 'camera') {
+            exportCtx.fillStyle = state.bgColor;
+            exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        } else {
+            exportCtx.fillStyle = '#111';
+            exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        }
+        
+        exportCtx.drawImage(cDraw, 0, 0);
+        
+        const a = document.createElement("a");
+        a.href = exportCanvas.toDataURL("image/png");
+        a.download = `air-canvas-page${state.pageIdx + 1}.png`;
+        a.click();
+        closeAllDropdowns(); showToast("Exported with background!");
+    }
+
+    function exportAllPages() {
+        savePage();
+        let count = 0;
+        state.pages.forEach((page, idx) => { 
+            if (page) { 
+                const a = document.createElement("a"); a.href = page; 
+                a.download = `air-canvas-page${idx + 1}.png`; a.click(); count++; 
+            } 
+        });
+        closeAllDropdowns(); showToast(`${count} pages exported!`);
+    }
+
+    function showToast(message) {
+        const toast = document.getElementById("toast");
+        toast.innerText = message;
+        toast.classList.add("show");
+        setTimeout(() => toast.classList.remove("show"), 2000);
+    }
+
+    function drawShapePreview(x1, y1, x2, y2) {
+        const shape = state.currentShape;
+        const minX = Math.min(x1, x2), minY = Math.min(y1, y2);
+        const w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
+        shapePreview.style.left = minX + "px"; shapePreview.style.top = minY + "px";
+        shapePreview.style.width = w + "px"; shapePreview.style.height = h + "px";
+        shapePreview.style.display = "block";
+        shapePreview.style.borderColor = COLORS[state.colIdx];
+        shapePreview.style.borderRadius = shape === "circle" ? "50%" : "0";
+    }
+
+    function finalizeShape(x1, y1, x2, y2) {
+        saveToUndoStack();
+        shapePreview.style.display = "none";
+        ctx.beginPath();
+        const shape = state.currentShape;
+        switch(shape) {
+            case "line": ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); break;
+            case "rect": ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)); break;
+            case "circle":
+                const cX = (x1 + x2) / 2, cY = (y1 + y2) / 2, rX = Math.abs(x2 - x1) / 2, rY = Math.abs(y2 - y1) / 2;
+                ctx.ellipse(cX, cY, rX, rY, 0, 0, Math.PI * 2); ctx.stroke(); break;
+            case "triangle":
+                const midX = (x1 + x2) / 2;
+                ctx.moveTo(midX, Math.min(y1, y2)); ctx.lineTo(Math.max(x1, x2), Math.max(y1, y2)); 
+                ctx.lineTo(Math.min(x1, x2), Math.max(y1, y2)); ctx.closePath(); ctx.stroke(); break;
+            case "arrow":
+                const angle = Math.atan2(y2 - y1, x2 - x1), headLen = 20;
+                ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+                ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+                ctx.moveTo(x2, y2);
+                ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+                ctx.stroke(); break;
+        }
+        placementCooldown = true;
+        setTimeout(() => { placementCooldown = false; }, 400);
+        selectShape('draw');
+    }
+
+    function placeEmoji(x, y) {
+        if (!state.selectedEmoji) return;
+        saveToUndoStack();
+        const size = SIZES[state.sizIdx] * 3;
+        ctx.font = `${size}px Arial`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.shadowBlur = 0;
+        ctx.fillText(state.selectedEmoji, x, y);
+        ctx.shadowBlur = SIZES[state.sizIdx] * 1.5;
+        placementCooldown = true;
+        setTimeout(() => { placementCooldown = false; }, 400);
+        state.selectedEmoji = null; state.currentShape = 'draw';
+        document.getElementById("bEmoji").innerText = "😀";
+        document.getElementById("bEmoji").classList.remove("act");
+        updateFloatingPreview();
+        showToast("Emoji placed!");
+    }
+
+    function updateHover(x, y) {
+        const el = document.elementFromPoint(x, y);
+        const isSlider = el && (el.tagName === 'INPUT' && el.type === 'range');
+        let checkEl = el, foundUI = false;
+        while (checkEl && !foundUI) {
+            if (checkEl.classList && (
+                checkEl.classList.contains("btn") || checkEl.classList.contains("shape-btn") || 
+                checkEl.classList.contains("emoji-btn") || checkEl.classList.contains("file-btn") ||
+                checkEl.classList.contains("bg-btn") || checkEl.classList.contains("size-btn") ||
+                checkEl.classList.contains("grid-option") || checkEl.classList.contains("dropdown") ||
+                checkEl.classList.contains("bar") || checkEl.classList.contains("upload-btn") ||
+                checkEl.classList.contains("pdf-nav") || isSlider
+            )) foundUI = true;
+            checkEl = checkEl.parentElement;
+        }
+        isOverUI = foundUI;
+        document.body.classList.toggle("over-ui", isOverUI);
+        if (isSlider) activeSlider = el;
+        else if (!isPinching) activeSlider = null;
+        if (lastHoveredEl && lastHoveredEl !== el) lastHoveredEl.classList.remove("hovered");
+        if (el && (el.classList.contains("btn") || el.classList.contains("shape-btn") || 
+                   el.classList.contains("emoji-btn") || el.classList.contains("file-btn") ||
+                   el.classList.contains("bg-btn") || el.classList.contains("size-btn") ||
+                   el.classList.contains("grid-option") || el.classList.contains("upload-btn"))) {
+            el.classList.add("hovered");
+            lastHoveredEl = el;
+        } else lastHoveredEl = null;
+    }
+
+    socket.on("hand_data", d => {
+        tx = (1 - d.x) * window.innerWidth;
+        ty = d.y * window.innerHeight;
+        isPinching = d.pinch;
+        isPalm = d.palm;
+    });
+
+    function loop() {
+        requestAnimationFrame(loop);
+        cx += (tx - cx) * 0.5;
+        cy += (ty - cy) * 0.5;
+        cursor.style.left = cx + "px"; cursor.style.top = cy + "px";
+        previewFloat.style.left = cx + "px"; previewFloat.style.top = cy + "px";
+        updateHover(cx, cy);
+
+        const now = Date.now();
+
+        // SLIDER INTERACTION
+        if (isPinching && activeSlider) {
+            if (!isInteractingWithSlider) isInteractingWithSlider = true;
+            const rect = activeSlider.getBoundingClientRect();
+            const percent = Math.max(0, Math.min(1, (cx - rect.left) / rect.width));
+            const min = parseFloat(activeSlider.min), max = parseFloat(activeSlider.max);
+            activeSlider.value = Math.round(min + percent * (max - min));
+            activeSlider.dispatchEvent(new Event('input'));
+            cursor.style.transform = "translate(-50%,-50%) scale(0.6)";
+            cursor.style.background = "#fff";
+            wasPinching = isPinching;
+            return;
+        }
+        if (!isPinching && isInteractingWithSlider) { isInteractingWithSlider = false; activeSlider = null; }
+
+        // PINCH START
+        if (isPinching && !wasPinching) {
+            if (now - lastPinchTime < PINCH_DEBOUNCE) { wasPinching = isPinching; return; }
+            cursor.style.transform = "translate(-50%,-50%) scale(0.6)";
+            cursor.style.background = "#fff";
+
+            const el = document.elementFromPoint(cx, cy);
+            let clickableEl = el;
+            while (clickableEl) {
+                if (clickableEl.classList && (
+                    clickableEl.classList.contains("btn") || clickableEl.classList.contains("shape-btn") || 
+                    clickableEl.classList.contains("emoji-btn") || clickableEl.classList.contains("file-btn") ||
+                    clickableEl.classList.contains("bg-btn") || clickableEl.classList.contains("size-btn") ||
+                    clickableEl.classList.contains("grid-option") || clickableEl.classList.contains("upload-btn")
+                )) {
+                    clickableEl.click();
+                    lastPinchTime = now;
+                    wasPinching = isPinching;
+                    return;
+                }
+                clickableEl = clickableEl.parentElement;
+            }
+
+            if (isOverUI || placementCooldown) { wasPinching = isPinching; return; }
+
+            if (state.currentShape === 'emoji' && state.selectedEmoji) {
+                placeEmoji(cx, cy);
+                lastPinchTime = now; wasPinching = isPinching; return;
+            }
+
+            if (state.currentShape !== 'draw' && state.currentShape !== 'emoji') {
+                shapeStartPoint = { x: cx, y: cy };
+                isDrawingShape = true;
+                lastPinchTime = now;
+            }
+
+            if (state.currentShape === 'draw') {
+                saveToUndoStack();
+                points = [{x: cx, y: cy}];
+                lastPinchTime = now;
+            }
+        }
+
+        // PINCH HELD - smooth glowing drawing
+        if (isPinching && wasPinching) {
+            cursor.style.transform = "translate(-50%,-50%) scale(0.6)";
+            cursor.style.background = "#fff";
+
+            if (isDrawingShape && shapeStartPoint) {
+                drawShapePreview(shapeStartPoint.x, shapeStartPoint.y, cx, cy);
+            }
+
+            if (state.currentShape === 'draw' && !isOverUI && !placementCooldown) {
+                points.push({x: cx, y: cy});
+                if (points.length > 2) {
+                    const i = points.length - 1;
+                    const p1 = points[i-2], p2 = points[i-1];
+                    const mid1 = {x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2};
+                    const mid2 = {x: (p2.x + cx) / 2, y: (p2.y + cy) / 2};
+                    ctx.beginPath();
+                    ctx.moveTo(mid1.x, mid1.y);
+                    ctx.quadraticCurveTo(p2.x, p2.y, mid2.x, mid2.y);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // PINCH RELEASED
+        if (!isPinching && wasPinching) {
+            cursor.style.transform = "translate(-50%,-50%) scale(1)";
+            cursor.style.background = "rgba(0,255,204,0.5)";
+            
+            if (isDrawingShape && shapeStartPoint) {
+                finalizeShape(shapeStartPoint.x, shapeStartPoint.y, cx, cy);
+                shapeStartPoint = null;
+                isDrawingShape = false;
+            }
+            points = [];
+        }
+
+        // ERASER (Palm)
+        if (isPalm && !isOverUI) {
+            const size = state.eraserSize;
+            cursor.style.width = size + "px"; cursor.style.height = size + "px";
+            cursor.style.borderColor = "#ff3366";
+            if (!wasPalm) { saveToUndoStack(); wasPalm = true; }
+            ctx.save(); 
+            ctx.globalCompositeOperation = "destination-out";
+            ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        } else {
+            if (wasPalm) wasPalm = false;
+            if (!isPinching) {
+                cursor.style.width = "16px"; cursor.style.height = "16px";
+                cursor.style.borderColor = COLORS[state.colIdx];
+            }
+        }
+
+        wasPinching = isPinching;
+    }
+    
+    resize();
+    loop();
+</script>
+</body>
+</html>
