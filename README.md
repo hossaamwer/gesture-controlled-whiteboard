@@ -2,6 +2,8 @@
 # Gesture Controlled Whiteboard  
 ## AI-Powered Real-Time Gesture-Controlled Whiteboard System
 
+[![Watch the Demo on LinkedIn](https://img.shields.io/badge/LinkedIn-Watch_Video-blue?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/posts/hossam-ahmed-388499381_computervision-deeplearning-pytorch-activity-7429828169714593792-Asd0?utm_source=share&utm_medium=member_desktop&rcm=ACoAAF4419gBSEXp-RTRX79B1Sbdf-Eo5_ZvozY)
+
 Gesture Controlled Whiteboard is a computer vision–driven interactive drawing and productivity platform that transforms hand gestures into a fully contactless digital workspace.
 
 By combining MediaPipe hand tracking, a custom PyTorch convolutional model, and a low-latency WebSocket architecture, the system enables smooth real-time drawing, PDF annotation, and multi-page project management without requiring physical input devices.
