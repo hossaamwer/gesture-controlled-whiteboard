@@ -399,7 +399,7 @@
     };
 
     let shapeStartPoint = null, isDrawingShape = false, lastHoveredEl = null, isOverUI = false, placementCooldown = false;
-    let tx = 0, ty = 0, cx = 0, cy = 0, isPinching = false, isPalm = false;
+    let tx = 0, ty = 0, cx = 0, cy = 0, isPinching = false, isPalm = false, isFist = false;
     let points = [], lastPinchTime = 0, wasPinching = false, wasPalm = false;
     let activeSlider = null, isInteractingWithSlider = false;
     const PINCH_DEBOUNCE = 200;
@@ -991,10 +991,33 @@
         ty = d.y * window.innerHeight;
         isPinching = d.pinch;
         isPalm = d.palm;
+        isFist = d.fist;
     });
 
     function loop() {
         requestAnimationFrame(loop);
+
+        if (isFist) {
+            cursor.style.opacity = "0";
+            previewFloat.style.opacity = "0";
+            if (isDrawingShape && shapeStartPoint) {
+                shapeStartPoint = null;
+                isDrawingShape = false;
+                shapePreview.style.display = "none";
+            }
+            wasPinching = false;
+            wasPalm = false;
+            points = [];
+            isInteractingWithSlider = false;
+            activeSlider = null;
+            return;
+        } else {
+            cursor.style.opacity = "1";
+            if (state.selectedEmoji) {
+                previewFloat.style.opacity = "0.8";
+            }
+        }
+
         cx += (tx - cx) * 0.5;
         cy += (ty - cy) * 0.5;
         cursor.style.left = cx + "px"; cursor.style.top = cy + "px";

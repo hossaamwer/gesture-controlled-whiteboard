@@ -147,11 +147,19 @@ def processing_loop():
                 raw_x = (lm[4].x + lm[8].x) / 2
                 raw_y = (lm[4].y + lm[8].y) / 2
                 
+                # Detect Fist
+                is_fist = True
+                wrist = lm[0]
+                for tip, mcp in [(8, 5), (12, 9), (16, 13), (20, 17)]:
+                    if calc_distance(wrist, lm[tip]) > calc_distance(wrist, lm[mcp]):
+                        is_fist = False
+                        break
+
                 # Check Dead Zones (Edges of screen)
                 if raw_y > (1 - DEAD_ZONE_Y) or raw_x < DEAD_ZONE_X or raw_x > (1 - DEAD_ZONE_X):
                     current_gesture = 0
                     smooth_x, smooth_y = stabilizer.update(raw_x, raw_y)
-                    socketio.emit("hand_data", {"x": smooth_x, "y": smooth_y, "pinch": False, "palm": False})
+                    socketio.emit("hand_data", {"x": smooth_x, "y": smooth_y, "pinch": False, "palm": False, "fist": is_fist})
                     time.sleep(0.01)
                     continue
 
@@ -181,7 +189,8 @@ def processing_loop():
                     "x": smooth_x, 
                     "y": smooth_y, 
                     "pinch": (current_gesture == 1), 
-                    "palm": (current_gesture == 2)
+                    "palm": (current_gesture == 2),
+                    "fist": is_fist
                 })
             
             time.sleep(0.01)
